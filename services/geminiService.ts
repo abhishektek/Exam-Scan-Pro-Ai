@@ -2,15 +2,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { OCRResult } from "../types";
 
-// Only initialize the client inside the function call to ensure process.env.API_KEY is available when needed
 export const extractQuestionsFromImage = async (base64Image: string): Promise<OCRResult> => {
-  const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) || '';
-  
-  if (!apiKey) {
-    console.warn("Gemini API Key is missing. Check your environment settings.");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
+  // Always use the latest API key from environment
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = "gemini-3-pro-preview";
 
   const response = await ai.models.generateContent({
@@ -24,14 +18,14 @@ export const extractQuestionsFromImage = async (base64Image: string): Promise<OC
           },
         },
         {
-          text: `Extract all academic questions from this exam paper image. 
-          Handle complex structures with high precision:
-          1. Identify different numbering schemes: Arabic (1, 2), Roman (I, II, III, IV), and Alphabetical (A, B, C or a, b, c).
-          2. Detect nested questions/sub-questions (e.g., if Question 1 has parts a, b, and c).
-          3. Capture bullet points or lists within a question's main text.
-          4. For multiple-choice questions, map options (A, B, C, D) clearly.
-          5. Identify marks/points associated with each question.
-          6. Return ONLY a valid JSON object. Do not include markdown headers.`,
+          text: `You are a professional academic digitizer. Extract all questions from this exam paper image.
+          Guidelines:
+          1. Detect numbering like: 1, Q1, Part I, Section A, (a), (i).
+          2. NESTED STRUCTURES: If a question has sub-parts, extract them into the subQuestions array.
+          3. MULTIPLE CHOICE: Map options (A, B, C, D) clearly.
+          4. TEXT CLEANING: Fix common OCR errors in math symbols (e.g., change 'x2' to 'x²' if appropriate).
+          5. RAW TEXT: Provide the full extracted text of the entire document.
+          6. FORMAT: Strict JSON only. No markdown formatting.`,
         },
       ],
     },
@@ -46,8 +40,8 @@ export const extractQuestionsFromImage = async (base64Image: string): Promise<OC
               type: Type.OBJECT,
               properties: {
                 id: { type: Type.STRING },
-                questionNumber: { type: Type.STRING, description: "The label, e.g., '1', 'Q1', 'Part I'" },
-                text: { type: Type.STRING, description: "The main body of the question" },
+                questionNumber: { type: Type.STRING },
+                text: { type: Type.STRING },
                 points: { type: Type.STRING },
                 correctAnswer: { type: Type.STRING },
                 options: {
@@ -55,7 +49,7 @@ export const extractQuestionsFromImage = async (base64Image: string): Promise<OC
                   items: {
                     type: Type.OBJECT,
                     properties: {
-                      label: { type: Type.STRING, description: "e.g., 'A', 'B'" },
+                      label: { type: Type.STRING },
                       text: { type: Type.STRING }
                     },
                     required: ["label", "text"]
@@ -67,6 +61,30 @@ export const extractQuestionsFromImage = async (base64Image: string): Promise<OC
                     type: Type.OBJECT,
                     properties: {
                       id: { type: Type.STRING },
-                      label: { type: Type.STRING, description: "e.g., '(a)', '(i)'" },
+                      label: { type: Type.STRING },
                       text: { type: Type.STRING }
                     },
+                    required: ["id", "label", "text"]
+                  }
+                }
+              },
+              required: ["id", "questionNumber", "text"]
+            }
+          },
+          rawText: { type: Type.STRING }
+        },
+        required: ["questions", "rawText"]
+      }
+    }
+  });
+
+  const text = response.text;
+  if (!text) throw new Error("Could not extract text from image.");
+
+  try {
+    return JSON.parse(text) as OCRResult;
+  } catch (e) {
+    console.error("JSON Parse Error", text);
+    throw new Error("The AI response was not in a valid format. Please try again.");
+  }
+};
