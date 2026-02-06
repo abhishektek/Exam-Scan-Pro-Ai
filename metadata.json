@@ -1,0 +1,7 @@
+{
+  "name": "ExamScan AI Pro",
+  "description": "An advanced exam paper digitizer that uses Gemini AI to extract, structure, and organize questions from images with high precision.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
